@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build:
@@ -23,15 +24,26 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Install dependencies
-        run: npm install --force
+      # حل مشکل ارور 404 با حذف فایل‌های lock قدیمی و پاکسازی کش npm
+      - name: Clean Cache & Install dependencies
+        run: |
+          rm -f package-lock.json
+          npm cache clean --force
+          npm install --legacy-peer-deps --force
 
-      - name: Build Android APK
+      # اعطای دسترسی به gradlew و حل مشکل احتمالی Permission Denied
+      - name: Make Gradlew Executable
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
 
+      # ساخت فایل APK با نادیده گرفتن هشدارهای کامپایل
+      - name: Build Android APK
+        run: |
+          cd android
+          ./gradlew assembleDebug --no-daemon
+
+      # آپلود فایل APK خروجی در بخش Artifacts
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

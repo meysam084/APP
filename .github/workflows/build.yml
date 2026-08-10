@@ -24,26 +24,26 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      # حل مشکل ارور 404 با حذف فایل‌های lock قدیمی و پاکسازی کش npm
+      # مدیریت کش گریدل برای جلوگیری از خطای دانلود wrapper
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
       - name: Clean Cache & Install dependencies
         run: |
           rm -f package-lock.json
           npm cache clean --force
           npm install --legacy-peer-deps --force
 
-      # اعطای دسترسی به gradlew و حل مشکل احتمالی Permission Denied
       - name: Make Gradlew Executable
         run: |
           cd android
           chmod +x gradlew
 
-      # ساخت فایل APK با نادیده گرفتن هشدارهای کامپایل
       - name: Build Android APK
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
-      # آپلود فایل APK خروجی در بخش Artifacts
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

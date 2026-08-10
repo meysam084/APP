@@ -24,9 +24,10 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      # نصب مستقیم ابزار Gradle روی سیستم‌عامل لینوکس سرور برای دور زدن مشکل دانلود Wrapper
-      - name: Install Gradle System-wide
-        run: sudo apt-get update && sudo apt-get install -y gradle
+      # پاکسازی مسیر ویندوزی جاوا از فایل تنظیمات گریدل
+      - name: Fix gradle.properties Java Home
+        run: |
+          sed -i '/org.gradle.java.home/d' android/gradle.properties || true
 
       - name: Clean Cache & Install dependencies
         run: |
@@ -34,11 +35,15 @@ jobs:
           npm cache clean --force
           npm install --legacy-peer-deps --force
 
-      # اجرای مستقیم بیلد با خود ابزار سیستم (بدون وابستگی به فایل‌های دانلود زپ Wrapper)
+      - name: Make Gradlew Executable
+        run: |
+          cd android
+          chmod +x gradlew
+
       - name: Build Android APK
         run: |
           cd android
-          gradle assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

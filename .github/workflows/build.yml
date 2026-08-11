@@ -1,4 +1,4 @@
-name: Build Android APK (Ultimate Fix)
+name: Build Standalone Offline APK
 
 on:
   push:
@@ -24,27 +24,29 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      # ۱. نصب پکیج‌ها به تمیزترین شکل ممکن
       - name: Install dependencies
         run: |
           npm cache clean --force
           rm -rf node_modules package-lock.json
           npm install --legacy-peer-deps
 
-      # ۲. راه حل طلایی: حذف پوشه آلوده اندروید و ساخت مجدد آن توسط اکسپو
       - name: Generate Fresh Android Project
         run: |
           rm -rf android
-          npx expo prebuild --platform android --clean
+          npx expo prebuild --platform android --clean --no-install || true
 
-      # ۳. بیلد مستقیم با گریدلِ تمیز و بدون اکشن‌های واسطه و دردسرساز
-      - name: Build APK
+      # ساخت فایل باندل جاوااسکریپت به صورت آفلاین داخل پروژه
+      - name: Bundle JS Bundle Offline
+        run: |
+          mkdir -p android/app/src/main/assets
+          npx expo export:embed --platform android --dev false || npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res/
+
+      - name: Build Standalone APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      # ۴. آپلود فایل نهایی
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

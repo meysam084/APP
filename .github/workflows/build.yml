@@ -1,4 +1,4 @@
-name: Build Android Release APK
+name: Build Standalone Release APK
 
 on:
   push:
@@ -30,20 +30,27 @@ jobs:
           rm -rf node_modules package-lock.json
           npm install --legacy-peer-deps
 
-      - name: Generate Clean Android Project
+      - name: Generate Fresh Android Project
         run: |
           rm -rf android
           npx expo prebuild --platform android --clean --no-install || true
 
-      # ساخت فایل APK نهایی در حالت Release (حذف کامل لودر توسعه و Metro)
-      - name: Build Android Release APK
+      # ساخت کی‌استور موقت برای امضای APK جهت عدم مواجهه با خطا
+      - name: Generate Temporary Keystore & Build Release
         run: |
           cd android
           chmod +x gradlew
+          keytool -genkey -v -keystore app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
           ./gradlew assembleRelease --no-daemon
 
-      - name: Upload APK
+      # پیدا کردن فایل APK ساخته شده و انتقال آن به مسیر مشخص
+      - name: Prepare APK for Upload
+        run: |
+          mkdir -p output_apk
+          find android/app/build/outputs/apk/ -name "*.apk" -exec cp {} output_apk/app-release.apk \;
+
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release-apk
-          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          path: output_apk/app-release.apk

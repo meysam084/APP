@@ -34,10 +34,10 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      - name: Setup Gradle with aggressive caching
+      - name: Setup Gradle with offline mode preparation (Option 2)
         uses: gradle/gradle-build-action@v3
         with:
-          gradle-version: wrapper
+          gradle-version: 8.7
           cache-disabled: false
           cache-read-only: false
           cache-write-only: false
@@ -78,6 +78,37 @@ jobs:
           else
             echo "Warning: gradle-wrapper.properties not found"
           fi
+
+      - name: Pre-cache Gradle Distribution (Option 1)
+        run: |
+          cd android
+          MAX_ATTEMPTS=3
+          RETRY_DELAY=15
+          
+          echo "=========================================="
+          echo "Pre-caching Gradle Distribution"
+          echo "=========================================="
+          
+          for attempt in $(seq 1 $MAX_ATTEMPTS); do
+            echo "Cache attempt $attempt/$MAX_ATTEMPTS"
+            
+            if ./gradlew --version 2>&1 | tee gradle-version.log; then
+              echo "✓ Gradle downloaded and cached successfully"
+              
+              # Verify Gradle is cached
+              if [ -d ~/.gradle/wrapper/dists/gradle-*/gradle-*/bin ]; then
+                echo "✓ Gradle binary verified in cache"
+                break
+              fi
+            fi
+            
+            if [ $attempt -lt $MAX_ATTEMPTS ]; then
+              echo "⚠ Cache attempt $attempt failed. Retrying in $RETRY_DELAY seconds..."
+              sleep $RETRY_DELAY
+            else
+              echo "⚠ Warning: Could not pre-cache Gradle, proceeding with build"
+            fi
+          done
 
       - name: Pre-download Gradle dependencies with retry
         run: |

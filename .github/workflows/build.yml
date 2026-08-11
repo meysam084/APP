@@ -1,4 +1,4 @@
-name: Build Android APK (Fix Main Registration)
+name: Build Android Release APK
 
 on:
   push:
@@ -30,32 +30,20 @@ jobs:
           rm -rf node_modules package-lock.json
           npm install --legacy-peer-deps
 
-      # ساخت پروژه اندروید با تنظیمات رسمی اکسپو
       - name: Generate Clean Android Project
         run: |
           rm -rf android
           npx expo prebuild --platform android --clean --no-install || true
 
-      # خروجی گرفتن استاندارد جاوااسکریپت و دارایی‌ها مطابق با ثبت اکسپو
-      - name: Export JS Bundle via Expo
-        run: |
-          mkdir -p android/app/src/main/assets
-          npx expo export --platform android
-
-      # کپی کدهای باندل‌شده اکسپو در مسیر نیتیو گریدل
-      - name: Copy Expo Bundle to Android Assets
-        run: |
-          cp -r dist/bundles/android* android/app/src/main/assets/index.android.bundle || cp -r dist/_expo/static/js/android/* android/app/src/main/assets/index.android.bundle || true
-          cp -r dist/assets/* android/app/src/main/res/ || true
-
-      - name: Build Standalone APK
+      # ساخت فایل APK نهایی در حالت Release (حذف کامل لودر توسعه و Metro)
+      - name: Build Android Release APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: app-release-apk
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk

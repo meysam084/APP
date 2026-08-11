@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK (Ultimate Fix)
 
 on:
   push:
@@ -6,218 +6,47 @@ on:
       - main
   workflow_dispatch:
 
-env:
-  GRADLE_USER_HOME: ${{ github.workspace }}/.gradle
-  GRADLE_OPTS: "-Xmx2048m -Dorg.gradle.daemon=false -Dorg.gradle.parallel=true"
-
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: 20
 
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
-          cache: 'gradle'
 
-      - name: Setup Gradle with offline mode preparation (Option 2)
-        uses: gradle/gradle-build-action@v3
-        with:
-          gradle-version: 8.7
-          cache-disabled: false
-          cache-read-only: false
-          cache-write-only: false
-          gradle-home-cache-includes: |
-            caches
-            notifications
-            jdks
-            wrapper
-          gradle-home-cache-cleanup: true
-
-      - name: Fix gradle.properties Java Home
+      # ۱. نصب پکیج‌ها به تمیزترین شکل ممکن
+      - name: Install dependencies
         run: |
-          if [ -f android/gradle.properties ]; then
-            sed -i '/org.gradle.java.home/d' android/gradle.properties || true
-          fi
-
-      - name: Clean Cache & Install dependencies
-        run: |
-          rm -f package-lock.json
           npm cache clean --force
-          npm install --legacy-peer-deps --force
+          rm -rf node_modules package-lock.json
+          npm install --legacy-peer-deps
 
-      - name: Make Gradlew Executable
+      # ۲. راه حل طلایی: حذف پوشه آلوده اندروید و ساخت مجدد آن توسط اکسپو
+      - name: Generate Fresh Android Project
+        run: |
+          rm -rf android
+          npx expo prebuild --platform android --clean
+
+      # ۳. بیلد مستقیم با گریدلِ تمیز و بدون اکشن‌های واسطه و دردسرساز
+      - name: Build APK
         run: |
           cd android
           chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
 
-      - name: Verify Gradle Wrapper Version
-        run: |
-          GRADLE_PROPERTIES="android/gradle/wrapper/gradle-wrapper.properties"
-          if [ -f "$GRADLE_PROPERTIES" ]; then
-            if grep -q "gradle-9.0.0" "$GRADLE_PROPERTIES"; then
-              echo "Rolling back from Gradle 9.0.0 to stable version 8.7"
-              sed -i 's|gradle-9.0.0|gradle-8.7|g' "$GRADLE_PROPERTIES"
-            fi
-            echo "Gradle wrapper configuration:"
-            cat "$GRADLE_PROPERTIES"
-          else
-            echo "Warning: gradle-wrapper.properties not found"
-          fi
-
-      - name: Pre-cache Gradle Distribution (Option 1)
-        run: |
-          cd android
-          MAX_ATTEMPTS=3
-          RETRY_DELAY=15
-          
-          echo "=========================================="
-          echo "Pre-caching Gradle Distribution"
-          echo "=========================================="
-          
-          for attempt in $(seq 1 $MAX_ATTEMPTS); do
-            echo "Cache attempt $attempt/$MAX_ATTEMPTS"
-            
-            if ./gradlew --version 2>&1 | tee gradle-version.log; then
-              echo "✓ Gradle downloaded and cached successfully"
-              
-              # Verify Gradle is cached
-              if [ -d ~/.gradle/wrapper/dists/gradle-*/gradle-*/bin ]; then
-                echo "✓ Gradle binary verified in cache"
-                break
-              fi
-            fi
-            
-            if [ $attempt -lt $MAX_ATTEMPTS ]; then
-              echo "⚠ Cache attempt $attempt failed. Retrying in $RETRY_DELAY seconds..."
-              sleep $RETRY_DELAY
-            else
-              echo "⚠ Warning: Could not pre-cache Gradle, proceeding with build"
-            fi
-          done
-
-      - name: Pre-download Gradle dependencies with retry
-        run: |
-          cd android
-          MAX_ATTEMPTS=5
-          RETRY_DELAY=20
-          
-          for attempt in $(seq 1 $MAX_ATTEMPTS); do
-            echo "=========================================="
-            echo "Dependency download attempt $attempt/$MAX_ATTEMPTS"
-            echo "=========================================="
-            
-            if ./gradlew --no-daemon --stacktrace help 2>&1 | tee build.log; then
-              echo "✓ Gradle initialized successfully"
-              break
-            fi
-            
-            if [ $attempt -lt $MAX_ATTEMPTS ]; then
-              echo "✗ Gradle initialization failed. Retrying in $RETRY_DELAY seconds..."
-              sleep $RETRY_DELAY
-            else
-              echo "✗ Failed to initialize Gradle after $MAX_ATTEMPTS attempts"
-              cat build.log
-              exit 1
-            fi
-          done
-
-      - name: Build Android APK with retry logic
-        run: |
-          cd android
-          MAX_ATTEMPTS=5
-          RETRY_DELAY=20
-          
-          for attempt in $(seq 1 $MAX_ATTEMPTS); do
-            echo "=========================================="
-            echo "Build attempt $attempt/$MAX_ATTEMPTS"
-            echo "=========================================="
-            
-            if ./gradlew assembleDebug \
-              --no-daemon \
-              --parallel \
-              --build-cache \
-              -Dorg.gradle.jvmargs="-Xmx2048m" \
-              --stacktrace \
-              --info 2>&1 | tee build_attempt_$attempt.log; then
-              echo "✓ Build successful!"
-              exit 0
-            fi
-            
-            # Check if it's a network error
-            if grep -E "(Connection refused|Connection timeout|Network is unreachable|ConnectException)" build_attempt_$attempt.log; then
-              echo "✗ Network error detected. Retrying in $RETRY_DELAY seconds..."
-              sleep $RETRY_DELAY
-            else
-              # If not a network error, fail immediately
-              echo "✗ Build failed with non-network error"
-              exit 1
-            fi
-            
-            if [ $attempt -lt $MAX_ATTEMPTS ]; then
-              echo "Waiting before retry..."
-              sleep $RETRY_DELAY
-            else
-              echo "✗ Build failed after $MAX_ATTEMPTS attempts"
-              exit 1
-            fi
-          done
-
-      - name: Verify APK was created
-        if: success()
-        run: |
-          if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
-            echo "✓ APK file created successfully"
-            ls -lh android/app/build/outputs/apk/debug/app-debug.apk
-          else
-            echo "✗ APK file not found"
-            find android -name "*.apk" -type f 2>/dev/null || echo "No APK files found"
-            exit 1
-          fi
-
+      # ۴. آپلود فایل نهایی
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 30
-          if-no-files-found: error
-
-      - name: Upload build logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs
-          path: android/build_attempt_*.log
-          retention-days: 7
-
-      - name: Build summary
-        if: always()
-        run: |
-          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- Build Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Timestamp: $(date)" >> $GITHUB_STEP_SUMMARY
-          echo "- Runner: ${{ runner.name }} (${{ runner.os }})" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "${{ job.status }}" == "failure" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Troubleshooting" >> $GITHUB_STEP_SUMMARY
-            echo "- Check build logs in artifacts for detailed error messages" >> $GITHUB_STEP_SUMMARY
-            echo "- Verify network connectivity for gradle.org services" >> $GITHUB_STEP_SUMMARY
-            echo "- Consider manually triggering the workflow again" >> $GITHUB_STEP_SUMMARY
-          fi

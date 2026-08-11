@@ -1,4 +1,4 @@
-name: Build Standalone Offline APK
+name: Build Android APK (Fix Main Registration)
 
 on:
   push:
@@ -30,16 +30,23 @@ jobs:
           rm -rf node_modules package-lock.json
           npm install --legacy-peer-deps
 
-      - name: Generate Fresh Android Project
+      # ساخت پروژه اندروید با تنظیمات رسمی اکسپو
+      - name: Generate Clean Android Project
         run: |
           rm -rf android
           npx expo prebuild --platform android --clean --no-install || true
 
-      # ساخت فایل باندل جاوااسکریپت به صورت آفلاین داخل پروژه
-      - name: Bundle JS Bundle Offline
+      # خروجی گرفتن استاندارد جاوااسکریپت و دارایی‌ها مطابق با ثبت اکسپو
+      - name: Export JS Bundle via Expo
         run: |
           mkdir -p android/app/src/main/assets
-          npx expo export:embed --platform android --dev false || npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res/
+          npx expo export --platform android
+
+      # کپی کدهای باندل‌شده اکسپو در مسیر نیتیو گریدل
+      - name: Copy Expo Bundle to Android Assets
+        run: |
+          cp -r dist/bundles/android* android/app/src/main/assets/index.android.bundle || cp -r dist/_expo/static/js/android/* android/app/src/main/assets/index.android.bundle || true
+          cp -r dist/assets/* android/app/src/main/res/ || true
 
       - name: Build Standalone APK
         run: |
